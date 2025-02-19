@@ -133,16 +133,19 @@ class TokenMonitor {
             console.log('R8 balance changes:', r8Balances);
             console.log('SOL changes by account:', solChanges.filter(sc => sc.change !== 0));
 
-            // Find accounts that spent/received SOL (ignoring small amounts and account 0)
-            const solSpender = solChanges.find(sc => 
-                sc.change < -0.01 && sc.accountIndex !== 0
-            );
-            const solReceiver = solChanges.find(sc => 
-                sc.change > 0.01 && sc.accountIndex !== 0
+            // Find significant SOL movements (ignoring small amounts and account 0)
+            const significantSolChanges = solChanges.filter(sc => 
+                Math.abs(sc.change) > 0.01 && // Significant amount
+                sc.accountIndex !== 0 &&      // Ignore pool fee account
+                sc.accountIndex !== 7         // Ignore another fee account
             );
 
-            // It's a buy if someone spent SOL (ignoring account 0's changes)
-            const isBuy = solSpender !== undefined;
+            // For buys: we should see negative SOL changes but no positive ones
+            const hasSolSpend = significantSolChanges.some(sc => sc.change < 0);
+            const hasSolReceive = significantSolChanges.some(sc => sc.change > 0);
+
+            // It's a buy if SOL was spent but not received
+            const isBuy = hasSolSpend && !hasSolReceive;
 
             if (isBuy) {
                 // Find positive token changes
