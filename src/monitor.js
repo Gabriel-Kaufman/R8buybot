@@ -107,8 +107,7 @@ class TokenMonitor {
             // Find R8 token balance changes
             const r8Balances = postBalances
                 .filter(balance => 
-                    balance.mint === this.yourTokenAddress.toString() &&
-                    balance.accountIndex !== 3  // Exclude pool account by index instead of balance size
+                    balance.mint === this.yourTokenAddress.toString()
                 )
                 .map(postBalance => {
                     const preBalance = preBalances.find(pre => 
@@ -118,28 +117,49 @@ class TokenMonitor {
                     const change = (postBalance.uiTokenAmount.uiAmount || 0) - 
                                  (preBalance?.uiTokenAmount.uiAmount || 0);
 
+                    // Find corresponding SOL change for this account
+                    const solChange = solChanges.find(sc => 
+                        sc.accountIndex === postBalance.accountIndex
+                    );
+
                     return {
                         accountIndex: postBalance.accountIndex,
-                        change: change
+                        change: change,
+                        solChange: solChange?.change || 0
                     };
                 });
 
-            r8Balances.forEach(balance => {
-                console.log(`Account ${balance.accountIndex} R8 change:`, balance.change);
-            });
+            // Log all changes for debugging
+            console.log('R8 balance changes:', r8Balances);
+            console.log('SOL changes by account:', solChanges.filter(sc => sc.change !== 0));
 
-            // Find the largest positive change (buy)
-            const largestPositiveChange = r8Balances.reduce((max, current) => 
-                current.change > max.change ? current : max,
-                { change: 0 }
+            // Find accounts that spent/received SOL (ignoring small amounts and account 0)
+            const solSpender = solChanges.find(sc => 
+                sc.change < -0.01 && sc.accountIndex !== 0
+            );
+            const solReceiver = solChanges.find(sc => 
+                sc.change > 0.01 && sc.accountIndex !== 0
             );
 
-            if (largestPositiveChange.change > 100) {
-                console.log('Buy detected:', largestPositiveChange.change, 'R8 tokens');
-                console.log('SOL spent:', solSpent);
-                await this.sendBuyNotification(largestPositiveChange.change, solSpent, signature);
+            // It's a buy if someone spent SOL (ignoring account 0's changes)
+            const isBuy = solSpender !== undefined;
+
+            if (isBuy) {
+                // Find positive token changes
+                const positiveChanges = r8Balances.filter(balance => balance.change > 100);
+                
+                if (positiveChanges.length > 0) {
+                    // Get the largest positive change
+                    const largestBuy = positiveChanges.reduce((max, current) => 
+                        current.change > max.change ? current : max
+                    );
+
+                    console.log('Buy detected:', largestBuy.change, 'R8 tokens');
+                    console.log('SOL spent:', solSpent);
+                    await this.sendBuyNotification(largestBuy.change, solSpent, signature);
+                }
             } else {
-                console.log('No buys detected in this transaction');
+                console.log('No buy detected - likely a sell or other transaction');
             }
 
         } catch (error) {
